@@ -1,2 +1,4 @@
 /.env
-/MongoDB CAS_Summer_Database_IDPW.txt
+/assets/
+/data/converted_data/
+/data/raw_data/
