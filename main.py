@@ -34,11 +34,41 @@ def convert_objectid(doc):
     doc["_id"] = str(doc["_id"])
     return doc
 
-@app.get("/movies")
-async def get_movies(request: Request):
+from fastapi import Query
+from datetime import datetime
+
+@app.get("/lectures/search")
+async def search_lectures(
+    request: Request,
+    building: int = Query(...),
+    floor: str = Query(...),  # 예: "4"
+    start_time: str = Query(...),  # "14:00"
+    end_time: str = Query(...)     # "18:00"
+):
     db = request.app.database
-    cursor = db["movies"].find().limit(10)  # 10개만 가져오기
-    movies = []
-    async for doc in cursor:
-        movies.append(convert_objectid(doc))
-    return {"count": len(movies), "movies": movies}
+    collection = db["2025_2_lectures"]
+
+    # 해당 층의 room들만 필터링 (예: "414" → floor "4" 포함)
+    floor_prefix = floor + ""
+
+    # 시간 비교를 위해 string을 datetime.time으로 파싱
+    def to_time(time_str):
+        return datetime.strptime(time_str, "%H:%M").time()
+
+    start = to_time(start_time)
+    end = to_time(end_time)
+
+    results = []
+    async for doc in collection.find({"building": building}):
+        room_floor = str(doc.get("room", ""))[:len(floor_prefix)]
+        doc_start = to_time(doc.get("start_time"))
+        doc_end = to_time(doc.get("end_time"))
+
+        # 같은 층이고 시간대가 겹치는 강의만 필터링
+        if (
+            room_floor == floor_prefix and
+            not (doc_end <= start or doc_start >= end)
+        ):
+            results.append(convert_objectid(doc))
+
+    return {"count": len(results), "results": results}
