@@ -42,3 +42,5 @@ async def get_movies(request: Request):
     async for doc in cursor:
         movies.append(convert_objectid(doc))
     return {"count": len(movies), "movies": movies}
+
+#backup
