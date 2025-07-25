@@ -83,6 +83,8 @@ def process_excel_file(filepath: str) -> list[dict]:
         lambda x: pd.Series(split_time_info(x))
     )
 
+    df.dropna(subset=["강의요일", "강의시간_리스트"], inplace=True)
+
     df = df.drop(columns=["강의시간", "강의시간_24시"])
 
     df["temp"] = df.apply(lambda row: list(zip(row["강의요일"], row["강의시간_리스트"])), axis=1)

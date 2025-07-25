@@ -72,3 +72,5 @@ async def search_lectures(
             results.append(convert_objectid(doc))
 
     return {"count": len(results), "results": results}
+
+# 각 강의실별로 시간표 데이터를 만들어두면 좀 더 제공하기 편하려나?
