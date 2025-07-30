@@ -3,6 +3,7 @@ from typing import Optional
 from db.mongo import get_database
 from utils.time_utils import calculate_minutes_diff, format_minutes_to_string
 from pymongo import ASCENDING
+import re
 
 router = APIRouter()
 
@@ -24,13 +25,31 @@ def lecture_to_dict(lec):
         "professor": lec["professor"]
     }
 
+def extract_floor(room: str) -> str:
+    """
+    강의실 번호로부터 층수를 추출. 예:
+    - "602" → "6"
+    - "B310" → "B3"
+    - "10-103" → "10"
+    - "B2-103" → "B2"
+    """
+    match = re.match(r"(B?\d+)", room)
+    if match:
+        prefix = match.group(1)
+        # 숫자만 있는 경우: 앞자리만 층
+        if prefix.startswith("B"):
+            return prefix[:2]  # B3, B2 등
+        else:
+            return prefix[:-2]  # 602 → 6
+    return "?"
+
 @router.get("/rooms")
 async def get_rooms(
     building: str,
     hour: int,
     minute: int,
     weekday: str,
-    floor: Optional[int] = None,
+    floor: Optional[str] = None,  # ✅ str로 변경
 ):
     db = get_database()
     target_time = f"{hour:02d}:{minute:02d}"
@@ -81,12 +100,12 @@ async def get_rooms(
             soon_message = f"{format_minutes_to_string(minutes)} 후 다음 수업이 시작됩니다"
         else:
             status = "empty"
-            available_minutes = 9999  # 무한대 느낌
+            available_minutes = 9999
             soon_message = None
 
         response.append({
             "building": building,
-            "floor": int(room[:-2]),  # 예: '602' → 6
+            "floor": extract_floor(room),
             "room_number": room,
             "status": status,
             "current_lecture": lecture_to_dict(current) if current else None,
