@@ -34,22 +34,31 @@ def parse_schedule(schedule_str: str):
             })
             continue
 
-        # ex: 목3,4
-        match_multiple = re.match(r"([월화수목금토일])([\d,]+)", part)
+        # ex: 목3,4 — 교시 기반 시간 처리
+        match_multiple = re.match(r"([월화수목금토일])([\d,]*)", part)
         if match_multiple:
             day = match_multiple.group(1)
-            periods = [int(p) for p in match_multiple.group(2).split(',')]
-            periods.sort()
-            start = convert_period_to_time(periods[0]).split("~")[0]
-            end = convert_period_to_time(periods[-1]).split("~")[1]
-            schedule_info.append({
-                "day": day,
-                "start_time": start,
-                "end_time": end
-            })
+            period_str = match_multiple.group(2)
+
+            try:
+                periods = [int(p.strip()) for p in period_str.split(',') if p.strip().isdigit()]
+                if not periods:
+                    continue  # 아무 유효 교시도 없으면 skip
+
+                periods.sort()
+                start = convert_period_to_time(periods[0]).split("~")[0]
+                end = convert_period_to_time(periods[-1]).split("~")[1]
+                schedule_info.append({
+                    "day": day,
+                    "start_time": start,
+                    "end_time": end
+                })
+            except ValueError:
+                continue  # 예외 발생 시 skip
+
             continue
 
-        # 강의실: B310관, 208관 등
+        # 강의실: 208관 B310호
         match_room = re.search(r"(\d+)관.*?(B?\d+-?\d*)호", part)
         if match_room:
             building = match_room.group(1)
@@ -77,6 +86,7 @@ def parse_schedule(schedule_str: str):
         })
 
     return results
+
 
 
 
@@ -136,6 +146,5 @@ def convert_all_excels(raw_dir: str, save_dir: str):
             json.dump(records, f, ensure_ascii=False, indent=2)
         print(f"{building}번 건물 → {save_name} 저장 완료")
 
-# 예시 실행 코드
 if __name__ == "__main__":
-    convert_all_excels("raw_test", "converted_data")
+    convert_all_excels("raw_data", "converted_data")
