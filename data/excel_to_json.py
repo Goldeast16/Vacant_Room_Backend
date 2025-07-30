@@ -14,14 +14,16 @@ def parse_schedule(schedule_str: str):
     if pd.isna(schedule_str):
         return None
 
-    parts = schedule_str.split('/')
+    # 화0,1,2, 목0,1,2 → 화0,1,2 / 목0,1,2 로 변환
+    schedule_str = re.sub(r"([월화수목금토일][\d,]+), *(?=[월화수목금토일])", r"\1 /", schedule_str)
+
+    parts = [p.strip() for p in schedule_str.split('/') if p.strip()]
     schedule_info = []
     room_candidates = []
+    day_period_map = defaultdict(list)
 
     for part in parts:
-        part = part.strip()
-
-        # ex: 화(15:00~16:15)
+        # 시간대 직접 명시된 경우 (ex. 월(09:00~10:15))
         match_time = re.match(r"([월화수목금토일])\((\d{2}:\d{2})~(\d{2}:\d{2})\)", part)
         if match_time:
             day = match_time.group(1)
@@ -34,38 +36,46 @@ def parse_schedule(schedule_str: str):
             })
             continue
 
-        # ex: 목3,4 — 교시 기반 시간 처리
-        match_multiple = re.match(r"([월화수목금토일])([\d,]*)", part)
-        if match_multiple:
-            day = match_multiple.group(1)
-            period_str = match_multiple.group(2)
-
+        # 교시 기반 시간 정보 (ex. 화0,1,2)
+        match_day_periods = re.match(r"([월화수목금토일])([\d,]+)", part)
+        if match_day_periods:
+            day = match_day_periods.group(1)
+            period_str = match_day_periods.group(2)
             try:
                 periods = [int(p.strip()) for p in period_str.split(',') if p.strip().isdigit()]
-                if not periods:
-                    continue  # 아무 유효 교시도 없으면 skip
-
-                periods.sort()
-                start = convert_period_to_time(periods[0]).split("~")[0]
-                end = convert_period_to_time(periods[-1]).split("~")[1]
-                schedule_info.append({
-                    "day": day,
-                    "start_time": start,
-                    "end_time": end
-                })
+                if periods:
+                    day_period_map[day].extend(periods)
             except ValueError:
-                continue  # 예외 발생 시 skip
-
+                continue
             continue
 
-        # 강의실: 208관 B310호
-        match_room = re.search(r"(\d+)관.*?(B?\d+-?\d*)호", part)
-        if match_room:
-            building = match_room.group(1)
-            room = match_room.group(2)
-            room_candidates.append((building, room))
+        # 강의실 정보 (ex. 208관 B310호 또는 417호만 있는 경우)
+        match_room_full = re.search(r"(\d+)관.*?(B?\d+-?\d*)호", part)
+        match_room_partial = re.match(r"(B?\d+-?\d*)호", part)
 
-    # 강의실 수가 1개면 전체에 공유
+        if match_room_full:
+            building = match_room_full.group(1)
+            room = match_room_full.group(2)
+            room_candidates.append((building, room))
+        elif match_room_partial:
+            if room_candidates:
+                building = room_candidates[-1][0]  # 마지막으로 등장한 건물명 사용
+                room = match_room_partial.group(1)
+                room_candidates.append((building, room))
+
+    # 교시 기반 요일-시간 변환
+    for day, periods in day_period_map.items():
+        if not periods:
+            continue
+        periods.sort()
+        start = convert_period_to_time(periods[0]).split("~")[0]
+        end = convert_period_to_time(periods[-1]).split("~")[1]
+        schedule_info.append({
+            "day": day,
+            "start_time": start,
+            "end_time": end
+        })
+
     share_rooms = len(room_candidates) == 1
 
     results = []
@@ -75,7 +85,12 @@ def parse_schedule(schedule_str: str):
         elif i < len(room_candidates):
             building, room = room_candidates[i]
         else:
-            building, room = None, None
+            # room 정보만 있고 building이 없는 경우 앞의 building 사용
+            if room_candidates:
+                building = room_candidates[-1][0]
+                room = room_candidates[-1][1]
+            else:
+                building, room = None, None
 
         results.append({
             "day": item["day"],
@@ -86,9 +101,6 @@ def parse_schedule(schedule_str: str):
         })
 
     return results
-
-
-
 
 def process_excel_file(filepath: str) -> list[dict]:
     df = pd.read_excel(filepath, engine="openpyxl")
@@ -130,6 +142,12 @@ def process_excel_file(filepath: str) -> list[dict]:
 
 def convert_all_excels(raw_dir: str, save_dir: str):
     os.makedirs(save_dir, exist_ok=True)
+
+    for f in os.listdir(save_dir):
+        file_path = os.path.join(save_dir, f)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+
     building_data = defaultdict(list)
 
     for filename in os.listdir(raw_dir):
