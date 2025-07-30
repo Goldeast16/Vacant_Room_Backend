@@ -5,7 +5,6 @@ import json
 from collections import defaultdict
 
 def convert_period_to_time(period_num: int) -> str:
-    # 0교시: 8시 시작, 그 이후는 9시부터 시작
     base_hour = 8 if period_num == 0 else 9 + (period_num - 1)
     start = f"{base_hour:02d}:00"
     end = f"{base_hour + 1:02d}:00"
@@ -13,103 +12,93 @@ def convert_period_to_time(period_num: int) -> str:
 
 def parse_schedule(schedule_str: str):
     if pd.isna(schedule_str):
-        return None, None, None
+        return None
 
-    # 예: '월10 / 310관 802호' 또는 '월(10:30~11:45) / 수10 / 303관 802호'
     parts = schedule_str.split('/')
-    time_parts = []
-    room_part = None
+    schedule_info = []
+    room_candidates = []
 
     for part in parts:
         part = part.strip()
 
-        # 교시 형식 예: 월0, 수3 등
-        match_period = re.match(r"([월화수목금토일])(\d+)", part)
-        if match_period:
-            day = match_period.group(1)
-            period = int(match_period.group(2))
-            time_range = convert_period_to_time(period)
-            time_parts.append(f"{day}({time_range})")
-            continue
-
-        # 이미 시간으로 되어 있으면 그대로 추가
-        match_time = re.match(r"([월화수목금토일])\(.+\)", part)
+        # ex: 화(15:00~16:15)
+        match_time = re.match(r"([월화수목금토일])\((\d{2}:\d{2})~(\d{2}:\d{2})\)", part)
         if match_time:
-            time_parts.append(part)
+            day = match_time.group(1)
+            start = match_time.group(2)
+            end = match_time.group(3)
+            schedule_info.append({
+                "day": day,
+                "start_time": start,
+                "end_time": end
+            })
             continue
 
-        # 강의실 정보로 간주
-        if re.search(r"\d+관.*\d+호", part):
-            room_part = part
+        # ex: 목3,4
+        match_multiple = re.match(r"([월화수목금토일])([\d,]+)", part)
+        if match_multiple:
+            day = match_multiple.group(1)
+            periods = [int(p) for p in match_multiple.group(2).split(',')]
+            periods.sort()
+            start = convert_period_to_time(periods[0]).split("~")[0]
+            end = convert_period_to_time(periods[-1]).split("~")[1]
+            schedule_info.append({
+                "day": day,
+                "start_time": start,
+                "end_time": end
+            })
+            continue
 
-    # 건물번호, 강의실 분리
-    building = classroom = None
-    if room_part:
-        match_room = re.match(r"(\d+관).*?(\d+-?\d*호)", room_part)
+        # 강의실: B310관, 208관 등
+        match_room = re.search(r"(\d+)관.*?(B?\d+-?\d*)호", part)
         if match_room:
             building = match_room.group(1)
-            classroom = match_room.group(2)
+            room = match_room.group(2)
+            room_candidates.append((building, room))
 
-    return " / ".join(time_parts), building, classroom
+    # 강의실 수가 1개면 전체에 공유
+    share_rooms = len(room_candidates) == 1
 
-def split_time_info(time_str):
-    if pd.isna(time_str):
-        return None, None
+    results = []
+    for i, item in enumerate(schedule_info):
+        if share_rooms:
+            building, room = room_candidates[0]
+        elif i < len(room_candidates):
+            building, room = room_candidates[i]
+        else:
+            building, room = None, None
 
-    days, times = [], []
+        results.append({
+            "day": item["day"],
+            "start_time": item["start_time"],
+            "end_time": item["end_time"],
+            "building": building,
+            "room": room
+        })
 
-    # 예: 월(10:30~11:45)
-    parts = [p.strip() for p in time_str.split('/')]
+    return results
 
-    for part in parts:
-        match = re.match(r"([월화수목금토일])\((\d{2}:\d{2}~\d{2}:\d{2})\)", part)
-        if match:
-            days.append(match.group(1))
-            times.append(match.group(2))
 
-    return days, times
+
 def process_excel_file(filepath: str) -> list[dict]:
     df = pd.read_excel(filepath, engine="openpyxl")
     df = df[["과목번호-분반", "과목명", "담당교수", "폐강", "강의시간"]]
     df = df[df["폐강"].isna()].drop(columns=["폐강"])
-
     df["담당교수"] = df["담당교수"].fillna("미정")
 
-    df[["강의시간_24시", "건물번호", "강의실"]] = df["강의시간"].apply(
-        lambda x: pd.Series(parse_schedule(x))
-    )
+    parsed_rows = []
+    for _, row in df.iterrows():
+        parsed = parse_schedule(row["강의시간"])
+        if parsed:
+            for p in parsed:
+                parsed_rows.append({
+                    "course_id": row["과목번호-분반"],
+                    "course_name": row["과목명"],
+                    "professor": row["담당교수"],
+                    **p
+                })
 
-    df[["강의요일", "강의시간_리스트"]] = df["강의시간_24시"].apply(
-        lambda x: pd.Series(split_time_info(x))
-    )
-
-    df.dropna(subset=["강의요일", "강의시간_리스트"], inplace=True)
-
-    df = df.drop(columns=["강의시간", "강의시간_24시"])
-
-    df["temp"] = df.apply(lambda row: list(zip(row["강의요일"], row["강의시간_리스트"])), axis=1)
-    df = df.explode("temp")
-    df = df[df["temp"].apply(lambda x: isinstance(x, tuple) and len(x) == 2)]
-
-    df[["요일", "시간"]] = pd.DataFrame(df["temp"].tolist(), index=df.index)
-    df = df.drop(columns=["temp", "강의요일", "강의시간_리스트"])
-
-    df[["start_time", "end_time"]] = df["시간"].str.split("~", expand=True)
-    df = df.drop(columns=["시간"])
-
-    df = df.rename(columns={
-        "건물번호": "building",
-        "강의실": "room",
-        "요일": "day",
-        "과목번호-분반": "course_id",
-        "과목명": "course_name",
-        "담당교수": "professor"
-    })
-
-    df = df[["building", "room", "day", "start_time", "end_time", "course_id", "course_name", "professor"]]
-
-    df["building"] = df["building"].apply(lambda x: re.search(r"\d+", str(x)).group() if pd.notna(x) else None)
-    df["room"] = df["room"].apply(lambda x: re.search(r"\d+(?:-\d+)?", str(x)).group() if pd.notna(x) else None)
+    df = pd.DataFrame(parsed_rows)
     df = df.dropna(subset=["building", "room"])
     df["building"] = df["building"].astype(int)
 
@@ -119,21 +108,19 @@ def process_excel_file(filepath: str) -> list[dict]:
     }
     df["day"] = df["day"].map(day_map)
 
-    data = df.to_dict(orient="records")
-    for row in data:
-        row["start_time"] = row["start_time"][:5]
-        row["end_time"] = row["end_time"][:5]
-
-    # 중복 제거 기준: 핵심 필드들이 모두 같은 경우
+    df = df[[
+        "building", "room", "day", "start_time", "end_time",
+        "course_id", "course_name", "professor"
+    ]]
     df = df.drop_duplicates(subset=[
         "building", "room", "day", "start_time", "end_time", "course_id"
     ])
 
-    return data
+    return df.to_dict(orient="records")
 
 def convert_all_excels(raw_dir: str, save_dir: str):
     os.makedirs(save_dir, exist_ok=True)
-    building_data = defaultdict(list)  # building 번호 → 리스트 모음
+    building_data = defaultdict(list)
 
     for filename in os.listdir(raw_dir):
         if filename.endswith(".xlsx"):
@@ -142,7 +129,6 @@ def convert_all_excels(raw_dir: str, save_dir: str):
             for row in lecture_list:
                 building_data[row["building"]].append(row)
 
-    # 각 건물별로 저장
     for building, records in building_data.items():
         save_name = f"{building}_lectures.json"
         save_path = os.path.join(save_dir, save_name)
@@ -150,6 +136,6 @@ def convert_all_excels(raw_dir: str, save_dir: str):
             json.dump(records, f, ensure_ascii=False, indent=2)
         print(f"{building}번 건물 → {save_name} 저장 완료")
 
-# 실행 예시
+# 예시 실행 코드
 if __name__ == "__main__":
-    convert_all_excels("raw_data", "converted_data")
+    convert_all_excels("raw_test", "converted_data")
