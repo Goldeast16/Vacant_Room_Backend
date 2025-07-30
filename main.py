@@ -7,4 +7,3 @@ load_dotenv()
 app = FastAPI()
 app.include_router(rooms_router, prefix="/api")
 
-# 20250730 backup
