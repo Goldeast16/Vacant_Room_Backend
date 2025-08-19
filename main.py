@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from routes.rooms import router as rooms_router
 from routes.health import health_router
+from routes.timetable import router as timetable_router
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -21,6 +22,13 @@ async def lifespan(app: FastAPI):
     try:
         await app.database.command("ping")
         print("MongoDB 연결 성공")
+
+        # 인덱스 생성
+        await app.database["2025_2_lectures"].create_index(
+            [("building", 1), ("room", 1), ("day", 1), ("start_time", 1)]
+        )
+        print("timetable 인덱스 확인/생성 완료")
+
     except Exception as e:
         print("MongoDB 연결 실패:", e)
         raise e
@@ -35,6 +43,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.include_router(rooms_router, prefix="/api")
 app.include_router(health_router)
+app.include_router(timetable_router)
 
 app.add_middleware(
     CORSMiddleware,
