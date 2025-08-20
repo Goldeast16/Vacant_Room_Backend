@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from routes.rooms import router as rooms_router
 from routes.health import health_router
 from routes.timetable import router as timetable_router
+from routes.feedback import router as feedback_router
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -44,6 +45,7 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(rooms_router, prefix="/api")
 app.include_router(health_router)
 app.include_router(timetable_router)
+app.include_router(feedback_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,
