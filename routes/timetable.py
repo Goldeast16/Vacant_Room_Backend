@@ -1,4 +1,3 @@
-# routes/timetable.py
 from fastapi import APIRouter, Query
 from typing import List, Union, Optional
 from pydantic import BaseModel, Field
