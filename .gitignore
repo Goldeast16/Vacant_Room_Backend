@@ -1,6 +1,6 @@
 /.env
-/assets/
 /data/converted_data/
 /data/raw_data/
 /data/raw_test/
 /data/excel2json.ipynb
+/assets/MongoDB CAS_Summer_Database_IDPW.txt

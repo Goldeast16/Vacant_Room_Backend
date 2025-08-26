@@ -15,9 +15,9 @@ def insert_building_jsons_to_mongo(json_dir: str, collection_name: str):
     db = client.get_default_database()
     collection = db[collection_name]
 
-    # ✅ 기존 데이터 전체 삭제
+    # 기존 데이터 전체 삭제
     collection.delete_many({})
-    print(f"⚠️ 기존 {collection_name} 컬렉션 데이터 전체 삭제 완료")
+    print(f"기존 {collection_name} 컬렉션 데이터 전체 삭제 완료")
 
     inserted_count = 0
     for filename in os.listdir(json_dir):
@@ -28,9 +28,9 @@ def insert_building_jsons_to_mongo(json_dir: str, collection_name: str):
                 if isinstance(data, list):
                     collection.insert_many(data)
                     inserted_count += len(data)
-                    print(f"✅ {filename} → {len(data)}개 삽입 완료")
+                    print(f"{filename} → {len(data)}개 삽입 완료")
 
-    print(f"\n🎉 총 {inserted_count}개 강의가 {collection_name} 컬렉션에 저장되었습니다.")
+    print(f"총 {inserted_count}개 강의가 {collection_name} 컬렉션에 저장되었습니다.")
 
 # 실행 예시
 if __name__ == "__main__":

@@ -50,7 +50,7 @@ app.include_router(feedback_router, prefix="/api")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://vacantroom-kvlj3iqcv-kimdongs-projects-b6fa48d9.vercel.app",
-        "https://vacantroom.vercel.app"],  # Vue dev server 주소
+        "https://vacantroom.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
